@@ -9,6 +9,10 @@
 
 #include "common.hpp"
 
+#define A53_START 0
+#define A73_START 2
+#define A53_MAX 2
+#define A73_MAX 4
 std::string keys =
     "{ help  h     | | Print help message. }"
     "{ @alias      | | An alias name of model to extract preprocessing parameters from models.yml file. }"
@@ -28,7 +32,18 @@ std::string keys =
                          "0: CPU target (by default), "
                          "1: OpenCL, "
                          "2: OpenCL fp16 (half-float precision), "
-                         "3: VPU }";
+                         "3: VPU }"
+    "{ cluster    | 0 | Choose CPU cluster to use for computations: "
+                         "0: Don't target specific cluster (by default), "
+                         "1: A53 cluster, "
+                         "2: A73 cluster }"
+    "{ ncores     | 0 | Choose number of cores in clusters to use for computations: "
+                         "0: Use all available cores (by default), "
+                         "1 - n: Dependent on number of cores available }"
+    "{ nframes    | 0 | Choose number of frames to count before terminating test: "
+                         "0: No limit, user-timed termination (by default), "
+                         "n: Terminate program after n number of frames processed }"
+    "{ output     | | Postfix output file label. }";
 
 
 using namespace cv;
@@ -69,6 +84,10 @@ int main(int argc, char** argv)
     bool swapRB = parser.get<bool>("rgb");
     int inpWidth = parser.get<int>("width");
     int inpHeight = parser.get<int>("height");
+    // additional flags for testing
+    int cluster = parser.get<int>("cluster");
+    int ncores = parser.get<int>("ncores");
+    double nframes = parser.get<double>("nframes");
     CV_Assert(parser.has("model"));
     std::string modelPath = findFile(parser.get<String>("model"));
     std::string configPath = findFile(parser.get<String>("config"));
@@ -106,25 +125,45 @@ int main(int argc, char** argv)
     else
         cap.open(parser.get<int>("device"));
 
-    // Process frames.
-    Mat frame, blob;
-    // // Set which CPUs to run on (A53: 0-1, A73: 2-5)
-    // cpu_set_t a53_set;
-    // CPU_ZERO(&a53_set);
-    // CPU_SET(0, &a53_set);
-    // CPU_SET(1, &a53_set);
-    // cpu_set_t a73_set;
-    // CPU_ZERO(&a73_set);
-    // CPU_SET(2, &a73_set);
-    // CPU_SET(3, &a73_set);
-    // CPU_SET(4, &a73_set);
-    // CPU_SET(5, &a73_set);
-    // sched_setaffinity(0, sizeof(cpu_set_t), &a73_set);
+    // Set which CPUs to run on (A53: 0-1, A73: 2-5)
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    
+    switch (cluster) {
+    case 1:
+      if (ncores == 0 || ncores > A53_MAX) ncores = A53_MAX;
+      for (int i = A53_START; i < A53_START + ncores; i++) {
+	CPU_SET(i, &set);
+      }
+      break;
+    case 2:
+      if (ncores == 0 || ncores > A73_MAX) ncores = A73_MAX;
+      for (int i = A73_START; i < A73_START + ncores; i++) {
+	CPU_SET(i, &set);
+      }
+      break;
+    default:
+      break;
+    }
+
+    sched_setaffinity(0, sizeof(cpu_set_t), &set);
+    
     // Data logging
     std::ofstream framesCount;
-    framesCount.open("framesCount.txt");
+    std::string fileName = "data/log"; // subdirectory + prefix
+    if (!parser.get<String>("output").empty()) {
+      std::cout << "postfix: " << parser.get<String>("output") << std::endl;
+      fileName = fileName + "_" + parser.get<String>("output") + ".txt";
+    } else {
+      std::cout << "No postfix entered" << std::endl;
+      fileName = fileName + ".txt";
+    }
+    framesCount.open(fileName.c_str());
     double fCount = 0;
     auto start = std::chrono::steady_clock::now();
+    
+    // Process frames.
+    Mat frame, blob;    
     while (waitKey(1) < 0)
     {
         cap >> frame;
@@ -153,11 +192,7 @@ int main(int argc, char** argv)
         postprocess(frame, outs, net);
 
 	fCount++;
-	if (framesCount.is_open()) {
-	  framesCount << fCount << "\n";
-	} else {
-	  std::cout << "File not open!" << std::endl;
-	}
+	
         // Put efficiency information.
         std::vector<double> layersTimes;
         double freq = getTickFrequency() / 1000;
@@ -166,12 +201,18 @@ int main(int argc, char** argv)
         putText(frame, label, Point(0, 15), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0));
 
         imshow(kWinName, frame);
+	if (nframes != 0 && fCount >= nframes) {
+	  std::cout << "Frame limit reached --- exiting program" << std::endl;
+	  break;
+	}
     }
     auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
-    framesCount << "Frames processed, time elapsed (s)" << fCount << ", " << elapsed_seconds.count() << "\n";
-    framesCount << "Average FPS:" << fCount/elapsed_seconds.count() << "\n";
+    // framesCount << "Frames processed, time elapsed (s): " << fCount << ", " << elapsed_seconds.count() << "\n";
+    // framesCount << "Average FPS:" << fCount/elapsed_seconds.count() << "\n";
+    framesCount << "ncores,fps\n" << CPU_COUNT(&set) << "," << fCount/elapsed_seconds.count() << "\n";
     framesCount.close();
+
     return 0;
 }
 
