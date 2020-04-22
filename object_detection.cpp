@@ -3,6 +3,8 @@
 #include <iostream>
 #include <chrono>
 #include <sched.h>
+#include <cstdlib>
+
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
@@ -43,7 +45,8 @@ std::string keys =
     "{ nframes    | 0 | Choose number of frames to count before terminating test: "
                          "0: No limit, user-timed termination (by default), "
                          "n: Terminate program after n number of frames processed }"
-    "{ output     | | Postfix output file label. }";
+    "{ output     | | Postfix output file label. }"
+    "{ freq       | 1704000 | Set CPU frequency. }";
 
 
 using namespace cv;
@@ -88,6 +91,7 @@ int main(int argc, char** argv)
     int cluster = parser.get<int>("cluster");
     int ncores = parser.get<int>("ncores");
     double nframes = parser.get<double>("nframes");
+    int freq = parser.get<int>("freq");
     CV_Assert(parser.has("model"));
     std::string modelPath = findFile(parser.get<String>("model"));
     std::string configPath = findFile(parser.get<String>("config"));
@@ -128,26 +132,32 @@ int main(int argc, char** argv)
     // Set which CPUs to run on (A53: 0-1, A73: 2-5)
     cpu_set_t set;
     CPU_ZERO(&set);
-    
+    std::string pathToFreq = "/sys/devices/system/cpu/cpufreq/";
+
     switch (cluster) {
     case 1:
       if (ncores == 0 || ncores > A53_MAX) ncores = A53_MAX;
       for (int i = A53_START; i < A53_START + ncores; i++) {
 	CPU_SET(i, &set);
       }
+      pathToFreq += "policy0";
       break;
     case 2:
       if (ncores == 0 || ncores > A73_MAX) ncores = A73_MAX;
       for (int i = A73_START; i < A73_START + ncores; i++) {
 	CPU_SET(i, &set);
       }
+      pathToFreq += "policy2";
       break;
     default:
       break;
     }
-
     sched_setaffinity(0, sizeof(cpu_set_t), &set);
     
+    // Set frequency
+    std::string freqCommand = "sudo bash -c \'echo " + std::to_string(freq) + " > " + pathToFreq + "/scaling_setspeed\'";
+    std::cout << freqCommand << std::endl;
+    system(freqCommand.c_str());
     // Data logging
     std::ofstream framesCount;
     std::string fileName = "data/log"; // subdirectory + prefix
