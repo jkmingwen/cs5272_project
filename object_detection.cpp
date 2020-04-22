@@ -163,12 +163,12 @@ int main(int argc, char** argv)
     std::string fileName = "data/log"; // subdirectory + prefix
     if (!parser.get<String>("output").empty()) {
       std::cout << "postfix: " << parser.get<String>("output") << std::endl;
-      fileName = fileName + "_" + parser.get<String>("output") + ".txt";
+      fileName = fileName + "_" + parser.get<String>("output") + ".csv";
     } else {
       std::cout << "No postfix entered" << std::endl;
       fileName = fileName + ".txt";
     }
-    framesCount.open(fileName.c_str());
+    framesCount.open(fileName.c_str(), std::ofstream::app);
     double fCount = 0;
     auto start = std::chrono::steady_clock::now();
     
@@ -220,7 +220,7 @@ int main(int argc, char** argv)
     std::chrono::duration<double> elapsed_seconds = end - start;
     // framesCount << "Frames processed, time elapsed (s): " << fCount << ", " << elapsed_seconds.count() << "\n";
     // framesCount << "Average FPS:" << fCount/elapsed_seconds.count() << "\n";
-    framesCount << "ncores,fps\n" << CPU_COUNT(&set) << "," << fCount/elapsed_seconds.count() << "\n";
+    framesCount << CPU_COUNT(&set) << "," << fCount/elapsed_seconds.count() << "," << freq << "\n";
     framesCount.close();
 
     return 0;
