@@ -4,6 +4,7 @@
 #include <chrono>
 #include <sched.h>
 #include <cstdlib>
+#include <cmath>
 
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
@@ -46,7 +47,9 @@ std::string keys =
                          "0: No limit, user-timed termination (by default), "
                          "n: Terminate program after n number of frames processed }"
     "{ output     | | Postfix output file label. }"
-    "{ freq       | 1704000 | Set CPU frequency. }";
+    // "{ freq       | 1704000 | Set CPU frequency. }"
+    "{ grain      | 5 | Granularity of FPS calculations. }"
+    "{ sframe     | 500 | Frames before switching CPU cluster. }";
 
 
 using namespace cv;
@@ -91,7 +94,9 @@ int main(int argc, char** argv)
     int cluster = parser.get<int>("cluster");
     int ncores = parser.get<int>("ncores");
     double nframes = parser.get<double>("nframes");
-    int freq = parser.get<int>("freq");
+    // int freq = parser.get<int>("freq");
+    double grain = parser.get<double>("grain");
+    double sframe = parser.get<double>("sframe");
     CV_Assert(parser.has("model"));
     std::string modelPath = findFile(parser.get<String>("model"));
     std::string configPath = findFile(parser.get<String>("config"));
@@ -130,34 +135,52 @@ int main(int argc, char** argv)
         cap.open(parser.get<int>("device"));
 
     // Set which CPUs to run on (A53: 0-1, A73: 2-5)
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    std::string pathToFreq = "/sys/devices/system/cpu/cpufreq/";
+    // cpu_set_t set;
+    // CPU_ZERO(&set);
+    // std::string pathToFreq = "/sys/devices/system/cpu/cpufreq/";
 
+    // switch (cluster) {
+    // case 1:
+    //   if (ncores == 0 || ncores > A53_MAX) ncores = A53_MAX;
+    //   for (int i = A53_START; i < A53_START + ncores; i++) {
+    // 	CPU_SET(i, &set);
+    //   }
+    //   pathToFreq += "policy0";
+    //   break;
+    // case 2:
+    //   if (ncores == 0 || ncores > A73_MAX) ncores = A73_MAX;
+    //   for (int i = A73_START; i < A73_START + ncores; i++) {
+    // 	CPU_SET(i, &set);
+    //   }
+    //   pathToFreq += "policy2";
+    //   break;
+    // default:
+    //   break;
+    // }
+    // sched_setaffinity(0, sizeof(cpu_set_t), &set);
+
+    // Initialise CPU masks
+    cpu_set_t a53_set;
+    cpu_set_t a73_set;
+    CPU_ZERO(&a53_set);
+    CPU_ZERO(&a73_set);
+    for (int i = A53_START; i < A53_START + A53_MAX; i++) CPU_SET(i, &a53_set);
+    for (int i = A73_START; i < A73_START + A73_MAX; i++) CPU_SET(i, &a73_set);
     switch (cluster) {
     case 1:
-      if (ncores == 0 || ncores > A53_MAX) ncores = A53_MAX;
-      for (int i = A53_START; i < A53_START + ncores; i++) {
-	CPU_SET(i, &set);
-      }
-      pathToFreq += "policy0";
+      sched_setaffinity(0, sizeof(cpu_set_t), &a53_set);
       break;
     case 2:
-      if (ncores == 0 || ncores > A73_MAX) ncores = A73_MAX;
-      for (int i = A73_START; i < A73_START + ncores; i++) {
-	CPU_SET(i, &set);
-      }
-      pathToFreq += "policy2";
+      sched_setaffinity(0, sizeof(cpu_set_t), &a73_set);
       break;
     default:
       break;
     }
-    sched_setaffinity(0, sizeof(cpu_set_t), &set);
     
     // Set frequency
-    std::string freqCommand = "sudo bash -c \'echo " + std::to_string(freq) + " > " + pathToFreq + "/scaling_setspeed\'";
-    std::cout << freqCommand << std::endl;
-    system(freqCommand.c_str());
+    // std::string freqCommand = "sudo bash -c \'echo " + std::to_string(freq) + " > " + pathToFreq + "/scaling_setspeed\'";
+    // std::cout << freqCommand << std::endl;
+    // system(freqCommand.c_str());
     // Data logging
     std::ofstream framesCount;
     std::string fileName = "data/log"; // subdirectory + prefix
@@ -171,7 +194,7 @@ int main(int argc, char** argv)
     framesCount.open(fileName.c_str(), std::ofstream::app);
     double fCount = 0;
     auto start = std::chrono::steady_clock::now();
-    
+    auto samp_start = std::chrono::steady_clock::now();
     // Process frames.
     Mat frame, blob;    
     while (waitKey(1) < 0)
@@ -211,6 +234,26 @@ int main(int argc, char** argv)
         putText(frame, label, Point(0, 15), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0));
 
         imshow(kWinName, frame);
+	if (fmod(fCount, grain) == 0) {
+	  auto samp_end = std::chrono::steady_clock::now();
+	  std::chrono::duration<double> samp_duration = samp_end - samp_start;
+	  std::chrono::duration<double> cumulative_duration = samp_end - start;
+	  // initial cluster, total frame count, current FPS, average FPS
+	  framesCount << fCount << "," << grain/samp_duration.count() << "," << fCount/cumulative_duration.count() << "\n";
+	  samp_start = std::chrono::steady_clock::now();
+	}
+	if (sframe != 0 && fCount == sframe) {
+	  switch(cluster) {
+	  case 1:
+	    sched_setaffinity(0, sizeof(cpu_set_t), &a73_set);
+	    break;
+	  case 2:
+	    sched_setaffinity(0, sizeof(cpu_set_t), &a53_set);
+	    break;
+	  default:
+	    break;
+	  }
+	}
 	if (nframes != 0 && fCount >= nframes) {
 	  std::cout << "Frame limit reached --- exiting program" << std::endl;
 	  break;
@@ -220,7 +263,7 @@ int main(int argc, char** argv)
     std::chrono::duration<double> elapsed_seconds = end - start;
     // framesCount << "Frames processed, time elapsed (s): " << fCount << ", " << elapsed_seconds.count() << "\n";
     // framesCount << "Average FPS:" << fCount/elapsed_seconds.count() << "\n";
-    framesCount << CPU_COUNT(&set) << "," << fCount/elapsed_seconds.count() << "," << freq << "\n";
+    // framesCount << CPU_COUNT(&set) << "," << fCount/elapsed_seconds.count() << "," << freq << "\n";
     framesCount.close();
 
     return 0;
