@@ -250,12 +250,24 @@ int main(int argc, char** argv)
 	    samp_start = std::chrono::steady_clock::now();
 	  }
 	  if (sframe != 0 && fCount == sframe) {
+	    cpu_set_t test_set;
+	    CPU_ZERO(&test_set);
 	    switch(cluster) {
 	    case 1:
+	      std::cout << "Changing CPUs (A53 to A73)..." << std::endl;
+	      std::cout << "Old CPU count:" << CPU_COUNT(&a53_set) << std::endl;
 	      sched_setaffinity(0, sizeof(cpu_set_t), &a73_set);
+	      sched_getaffinity(0, sizeof(cpu_set_t), &test_set);
+	      std::cout << "New CPU count: " << CPU_COUNT(&test_set) << std::endl;
+	      std::cout << "Is equal? " << CPU_EQUAL(&a73_set, &test_set) << std::endl;
 	      break;
 	    case 2:
+	      std::cout << "Changing CPUs (A73 to A53)..." << std::endl;
+	      std::cout << "Old CPU count:" << CPU_COUNT(&a73_set) << std::endl;
 	      sched_setaffinity(0, sizeof(cpu_set_t), &a53_set);
+	      sched_getaffinity(0, sizeof(cpu_set_t), &test_set);
+	      std::cout << "New CPU count: " << CPU_COUNT(&test_set) << std::endl;
+	      std::cout << "Is equal? " << CPU_EQUAL(&a53_set, &test_set) << std::endl;
 	      break;
 	    default:
 	      break;
