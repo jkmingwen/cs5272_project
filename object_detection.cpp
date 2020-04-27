@@ -5,6 +5,8 @@
 #include <sched.h>
 #include <cstdlib>
 #include <cmath>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
@@ -141,6 +143,12 @@ int main(int argc, char** argv)
 
     // Set which CPUs to run on (A53: 0-1, A73: 2-5)
     // Initialise CPU masks
+    pid_t master_pid = getpid();
+    std::vector<pid_t> children;
+    std::cout << "Parent PID: " << master_pid << std::endl;
+    std::string pidCommand = "ls -1 \'/proc/" + std::to_string(master_pid) + "/task\'";
+    std::string pid_list = "pid_list.txt";
+    // system((pidCommand + " > " + pid_list).c_str());
     cpu_set_t a53_set;
     cpu_set_t a73_set;
     CPU_ZERO(&a53_set);
@@ -177,10 +185,10 @@ int main(int argc, char** argv)
 	for (int i = A73_START; i < A73_START + A73_MAX; i++) CPU_SET(i, &a73_set);
 	switch (cluster) {
 	case 1:
-	  sched_setaffinity(0, sizeof(cpu_set_t), &a53_set);
+	  system(("bash task_migrate.sh " + std::to_string(master_pid) + " 0-1").c_str());
 	  break;
 	case 2:
-	  sched_setaffinity(0, sizeof(cpu_set_t), &a73_set);
+	  system(("bash task_migrate.sh " + std::to_string(master_pid) + " 2-5").c_str());
 	  break;
 	default:
 	  break;
@@ -250,24 +258,17 @@ int main(int argc, char** argv)
 	    samp_start = std::chrono::steady_clock::now();
 	  }
 	  if (sframe != 0 && fCount == sframe) {
+	    system(("bash task_migrate.sh " + std::to_string(master_pid)).c_str());
 	    cpu_set_t test_set;
 	    CPU_ZERO(&test_set);
 	    switch(cluster) {
 	    case 1:
 	      std::cout << "Changing CPUs (A53 to A73)..." << std::endl;
-	      std::cout << "Old CPU count:" << CPU_COUNT(&a53_set) << std::endl;
-	      sched_setaffinity(0, sizeof(cpu_set_t), &a73_set);
-	      sched_getaffinity(0, sizeof(cpu_set_t), &test_set);
-	      std::cout << "New CPU count: " << CPU_COUNT(&test_set) << std::endl;
-	      std::cout << "Is equal? " << CPU_EQUAL(&a73_set, &test_set) << std::endl;
+	      system(("bash task_migrate.sh " + std::to_string(master_pid) + " 2-5").c_str());
 	      break;
 	    case 2:
 	      std::cout << "Changing CPUs (A73 to A53)..." << std::endl;
-	      std::cout << "Old CPU count:" << CPU_COUNT(&a73_set) << std::endl;
-	      sched_setaffinity(0, sizeof(cpu_set_t), &a53_set);
-	      sched_getaffinity(0, sizeof(cpu_set_t), &test_set);
-	      std::cout << "New CPU count: " << CPU_COUNT(&test_set) << std::endl;
-	      std::cout << "Is equal? " << CPU_EQUAL(&a53_set, &test_set) << std::endl;
+	      system(("bash task_migrate.sh " + std::to_string(master_pid) + " 0-1").c_str());
 	      break;
 	    default:
 	      break;
