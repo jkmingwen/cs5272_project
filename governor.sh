@@ -10,8 +10,9 @@ int_prev=0
 error=0
 error_int=0
 error_der=0
-dt=5
+dt=5 # delay between each sample
 output=0
+counter=0
 
 # Coefficients for PID (proportional, accumulated, dampening)
 Kp=1
@@ -72,6 +73,24 @@ inc_ncores()
 # Args: cluster, decreases number of cores
 dec_ncores()
 {
+}
+
+dvfs_control()
+{
+    update_output
+    # if output -ve, +freq and vice versa
+}
+
+core_control()
+{
+    update_output
+    # if output -ve, +ncores and vice versa
+}
+
+cluster_control()
+{
+    update_output
+    # if output -ve, migrate to bigger core vice versa
 }
 
 trap "exit" INT
