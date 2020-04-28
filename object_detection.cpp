@@ -198,6 +198,7 @@ int main(int argc, char** argv)
 
     // Data logging
     std::ofstream framesCount;
+    std::ofstream fpsCurrent;
     std::string fileName = "data/log"; // subdirectory + prefix
     if (!parser.get<String>("output").empty()) {
       std::cout << "postfix: " << parser.get<String>("output") << std::endl;
@@ -249,8 +250,20 @@ int main(int argc, char** argv)
         putText(frame, label, Point(0, 15), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0));
 
         imshow(kWinName, frame);
+	// update FPS every grain frames
+	if (fmod(fCount, grain) == 0) {
+	  auto samp_end = std::chrono::steady_clock::now();
+	  std::chrono::duration<double> samp_duration = samp_end - samp_start;
+	  std::chrono::duration<double> cumulative_duration = samp_end - start;
+	  fpsCurrent.open("fps.txt", std::ofstream::trunc); // store only current FPS
+	  fpsCurrent << grain/samp_duration.count() << "\n";
+	  fpsCurrent.close();
+	  samp_start = std::chrono::steady_clock::now();
+	}
+	// if (fCount == 30) system("./governor.sh");
+	
 	if (test == 2) {
-	  // log FPS every grain frames and switch cluster after sframe frames
+	  // log FPS every grain frames
 	  if (fmod(fCount, grain) == 0) {
 	    auto samp_end = std::chrono::steady_clock::now();
 	    std::chrono::duration<double> samp_duration = samp_end - samp_start;
@@ -259,6 +272,7 @@ int main(int argc, char** argv)
 	    framesCount << fCount << "," << grain/samp_duration.count() << "," << fCount/cumulative_duration.count() << "\n";
 	    samp_start = std::chrono::steady_clock::now();
 	  }
+	  // switch cluster after sframe frames
 	  if (sframe != 0 && fCount == sframe) {
 	    system(("bash task_migrate.sh " + std::to_string(master_pid)).c_str());
 	    cpu_set_t test_set;
@@ -277,7 +291,8 @@ int main(int argc, char** argv)
 	    }
 	  }
 	}
-	if (nframes != 0 && fCount >= nframes) {
+	// Test end condition
+	if (test && nframes != 0 && fCount >= nframes) {
 	  std::cout << "Frame limit reached --- exiting program" << std::endl;
 	  break;
 	}
@@ -291,6 +306,7 @@ int main(int argc, char** argv)
       framesCount << CPU_COUNT(&set) << "," << fCount/elapsed_seconds.count() << "," << freq << "\n";
     }
     framesCount.close();
+    fpsCurrent.close();
 
     return 0;
 }
