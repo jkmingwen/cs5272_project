@@ -58,21 +58,25 @@ update_output()
 # Args: cluster (0/2) and frequency (int), updates cluster CPU freq
 set_freq()
 {
+    return
 }
 
 # Args: master PID and cluster (0/2), migrates taskset to specified cluster
 set_cluster()
 {
+    return
 }
 
 # Args: cluster, increases number of cores
 inc_ncores()
 {
+    return
 }
 
 # Args: cluster, decreases number of cores
 dec_ncores()
 {
+    return
 }
 
 dvfs_control()
@@ -95,6 +99,7 @@ cluster_control()
 
 trap "exit" INT
 get_pid
+
 while :
 do    
     update_output
@@ -110,5 +115,8 @@ do
 	echo ""
     fi
     sleep ${dt}
+    counter=$((counter + 1))
+    echo "Current count is ${counter}"
+    echo "Checking mod: $((counter % 5))"
 done
 
