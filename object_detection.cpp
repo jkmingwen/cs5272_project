@@ -122,45 +122,47 @@ int main(int argc, char** argv)
     CPU_ZERO(&a73_set);
     cpu_set_t set;
     CPU_ZERO(&set);
-      std::string pathToFreq = "/sys/devices/system/cpu/cpufreq/";
-      if (test == 1) {
-	switch (cluster) {
-	case 1:
-	  if (ncores == 0 || ncores > A53_MAX) ncores = A53_MAX;
-	  for (int i = A53_START; i < A53_START + ncores; i++) {
-	    CPU_SET(i, &set);
-	  }
-	  pathToFreq += "policy0";
-	  break;
-	case 2:
-	  if (ncores == 0 || ncores > A73_MAX) ncores = A73_MAX;
-	  for (int i = A73_START; i < A73_START + ncores; i++) {
-	    CPU_SET(i, &set);
-	  }
-	  pathToFreq += "policy2";
-	  break;
-	default:
-	  break;
+    std::string pathToFreq = "/sys/devices/system/cpu/cpufreq/";
+    if (test == 1) {
+      switch (cluster) {
+      case 1:
+	if (ncores == 0 || ncores > A53_MAX) ncores = A53_MAX;
+	for (int i = A53_START; i < A53_START + ncores; i++) {
+	  CPU_SET(i, &set);
 	}
-	sched_setaffinity(0, sizeof(cpu_set_t), &set);
-	// Set frequency
-	std::string freqCommand = "sudo bash -c \'echo " + std::to_string(freq) + " > " + pathToFreq + "/scaling_setspeed\'";
-	std::cout << freqCommand << std::endl;
-	system(freqCommand.c_str());
-      } else if (test == 2) {
-	for (int i = A53_START; i < A53_START + A53_MAX; i++) CPU_SET(i, &a53_set);
-	for (int i = A73_START; i < A73_START + A73_MAX; i++) CPU_SET(i, &a73_set);
-	switch (cluster) {
-	case 1:
-	  system(("bash task_migrate.sh " + std::to_string(master_pid) + " 0-1").c_str());
-	  break;
-	case 2:
-	  system(("bash task_migrate.sh " + std::to_string(master_pid) + " 2-5").c_str());
-	  break;
-	default:
-	  break;
+	pathToFreq += "policy0";
+	break;
+      case 2:
+	if (ncores == 0 || ncores > A73_MAX) ncores = A73_MAX;
+	for (int i = A73_START; i < A73_START + ncores; i++) {
+	  CPU_SET(i, &set);
 	}
+	pathToFreq += "policy2";
+	break;
+      default:
+	break;
       }
+      sched_setaffinity(0, sizeof(cpu_set_t), &set);
+      
+      // Set CPU frequency
+      std::string freqCommand = "sudo bash -c \'echo " + std::to_string(freq) + " > " + pathToFreq + "/scaling_setspeed\'";
+      std::cout << freqCommand << std::endl;
+      system(freqCommand.c_str());
+    } else if (test == 2) {
+      for (int i = A53_START; i < A53_START + A53_MAX; i++) CPU_SET(i, &a53_set);
+      for (int i = A73_START; i < A73_START + A73_MAX; i++) CPU_SET(i, &a73_set);
+      switch (cluster) {
+      case 1:
+	system(("bash task_migrate.sh " + std::to_string(master_pid) + " 0-1").c_str());
+	break;
+      case 2:
+	system(("bash task_migrate.sh " + std::to_string(master_pid) + " 2-5").c_str());
+	break;
+      default:
+	break;
+      }
+    }
+    
     // Open file with classes names.
     if (parser.has("classes"))
     {
@@ -194,59 +196,6 @@ int main(int argc, char** argv)
     else
         cap.open(parser.get<int>("device"));
 
-    // // Set which CPUs to run on (A53: 0-1, A73: 2-5)
-    // // Initialise CPU masks
-    // pid_t master_pid = getpid();
-    // std::vector<pid_t> children;
-    // std::cout << "Parent PID: " << master_pid << std::endl;
-    // std::string pidCommand = "ls -1 \'/proc/" + std::to_string(master_pid) + "/task\'";
-    // std::string pid_list = "pid_list.txt";
-    // // system((pidCommand + " > " + pid_list).c_str());
-    // cpu_set_t a53_set;
-    // cpu_set_t a73_set;
-    // CPU_ZERO(&a53_set);
-    // CPU_ZERO(&a73_set);
-    // cpu_set_t set;
-    // CPU_ZERO(&set);
-    //   std::string pathToFreq = "/sys/devices/system/cpu/cpufreq/";
-    //   if (test == 1) {
-    // 	switch (cluster) {
-    // 	case 1:
-    // 	  if (ncores == 0 || ncores > A53_MAX) ncores = A53_MAX;
-    // 	  for (int i = A53_START; i < A53_START + ncores; i++) {
-    // 	    CPU_SET(i, &set);
-    // 	  }
-    // 	  pathToFreq += "policy0";
-    // 	  break;
-    // 	case 2:
-    // 	  if (ncores == 0 || ncores > A73_MAX) ncores = A73_MAX;
-    // 	  for (int i = A73_START; i < A73_START + ncores; i++) {
-    // 	    CPU_SET(i, &set);
-    // 	  }
-    // 	  pathToFreq += "policy2";
-    // 	  break;
-    // 	default:
-    // 	  break;
-    // 	}
-    // 	sched_setaffinity(0, sizeof(cpu_set_t), &set);
-    // 	// Set frequency
-    // 	std::string freqCommand = "sudo bash -c \'echo " + std::to_string(freq) + " > " + pathToFreq + "/scaling_setspeed\'";
-    // 	std::cout << freqCommand << std::endl;
-    // 	system(freqCommand.c_str());
-    //   } else if (test == 2) {
-    // 	for (int i = A53_START; i < A53_START + A53_MAX; i++) CPU_SET(i, &a53_set);
-    // 	for (int i = A73_START; i < A73_START + A73_MAX; i++) CPU_SET(i, &a73_set);
-    // 	switch (cluster) {
-    // 	case 1:
-    // 	  system(("bash task_migrate.sh " + std::to_string(master_pid) + " 0-1").c_str());
-    // 	  break;
-    // 	case 2:
-    // 	  system(("bash task_migrate.sh " + std::to_string(master_pid) + " 2-5").c_str());
-    // 	  break;
-    // 	default:
-    // 	  break;
-    // 	}
-    //   }
     // Data logging
     std::ofstream framesCount;
     std::string fileName = "data/log"; // subdirectory + prefix
