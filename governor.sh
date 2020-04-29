@@ -37,7 +37,7 @@ ncores_max=0
 ncores_min=0
 
 # Coefficients for PID (proportional, accumulated, dampening)
-Kp_freq=1
+Kp_freq=0.9
 Kp_ncores=0.5
 Kp_cluster=0.4
 Ki_freq=0
@@ -84,9 +84,9 @@ update_error()
 
 freq_clip()
 {
-    # [ $DEBUG -eq 1 ] && echo "freq value to be clipped: $freq_key"
+    [ $DEBUG -ge 2 ] && echo "freq key value to be clipped: $freq_key"
     freq_key=$(echo "scale = 0;(${freq_key} / 1)" | bc) # round to int
-    # [ $DEBUG -eq 1 ] && echo "freq after rounding: $freq_key"
+    [ $DEBUG -ge 2 ] && echo "freq key after rounding: $freq_key"
     if [ 1 -eq "$(echo "${freq_key} >= ${freq_max}" | bc)" ] # clip to max/min
     then
 	freq_key=${freq_max}
@@ -94,7 +94,7 @@ freq_clip()
     then
 	freq_key=${freq_min}
     fi
-    # [ $DEBUG -eq 1 ] && echo "freq value after clipping: $freq_key"
+    [ $DEBUG -ge 2 ] && echo "freq key value after clipping: $freq_key"
 }
 
 ncores_clip()
@@ -107,9 +107,9 @@ ncores_clip()
     then
 	ncores_max=${ncores_max_a73}
     fi
-    [ $DEBUG -eq 1 ] && echo "ncores key value to be clipped: $ncores_key"
-    ncores_key=$(echo "scale = 0;(${ncores_key} / 1)" | bc) # round to int
-    [ $DEBUG -eq 1 ] && echo "ncores key after rounding: $ncores_key"
+    # [ $DEBUG -ge 2 ] && echo "ncores key value to be clipped: $ncores_key"
+    # ncores_key=$(echo "scale = 0;(${ncores_key} / 1)" | bc) # round to int
+    [ $DEBUG -ge 2 ] && echo "ncores key after rounding: $ncores_key"
     if [ 1 -eq "$(echo "${ncores_key} >= ${ncores_max}" | bc)" ] # clip to max/min
     then
     	ncores_key=${ncores_max}
@@ -117,14 +117,14 @@ ncores_clip()
     then
     	ncores_key=${ncores_min}
     fi
-    [ $DEBUG -eq 1 ] && echo "ncores key value after clipping: $ncores_key"
+    [ $DEBUG -ge 2 ] && echo "ncores key value after clipping: $ncores_key"
 }
 
 cluster_clip()
 {
-    [ $DEBUG -ge 1 ] && echo "cluster value to be clipped: $cluster"
+    [ $DEBUG -ge 2 ] && echo "cluster value to be clipped: $cluster"
     cluster=$(echo "scale = 0;(${cluster} / 1)" | bc) # round to int
-    [ $DEBUG -ge 1 ] && echo "cluster after rounding: $cluster"
+    [ $DEBUG -ge 2 ] && echo "cluster after rounding: $cluster"
     if [ 1 -eq "$(echo "${cluster} > 1" | bc)" ]
     then
     	cluster=2
@@ -132,25 +132,26 @@ cluster_clip()
     then
     	cluster=1
     fi
-    [ $DEBUG -ge 1 ] && echo "cluster value after clipping: $cluster"
+    [ $DEBUG -ge 2 ] && echo "cluster value after clipping: $cluster"
 }
 
 freq_control()
 {
-    # [ $DEBUG -eq 1 ] && echo "Current frequency: ${freqs_a53[${freq_key}]}"
+    [ $DEBUG -ge 2 ] && echo "Current frequency: ${freq_vals[${freq_key}]}"
     freq_out=$(echo "${Kp_freq} * ${error} + ${Ki_freq} * ${error_int} + ${Kd_freq} * ${error_der}" | bc)
     freq_key=$(echo "${freq_key} + ${freq_out}" | bc)
     freq_clip
-    # [ $DEBUG -eq 1 ] && echo "New frequency: ${freqs_a53[${freq_key}]}"
+    [ $DEBUG -ge 2 ] && echo "New frequency: ${freq_vals[${freq_key}]}"
 }
 
 ncores_control()
 {
-    # [ $DEBUG -eq 1 ] && echo "Current CPUs: ${ncores_vals[${ncores_key}]}"
+    [ $DEBUG -ge 2 ] && echo "Current CPUs: ${ncores_vals[${ncores_key}]}"
     ncores_out=$(echo "${Kp_ncores} * ${error} + ${Ki_ncores} * ${error_int} + ${Kd_ncores} * ${error_der}" | bc)
+    ncores_out=$(echo "scale = 0;(${ncores_out} / 1)" | bc) # round to int
     ncores_key=$(echo "${ncores_key} + ${ncores_out}" | bc)
     ncores_clip
-    # [ $DEBUG -eq 1 ] && echo "New CPUs: ${ncores_vals[${ncores_key}]}"
+    [ $DEBUG -ge 2 ] && echo "New CPUs: ${ncores_vals[${ncores_key}]}"
 }
 
 cluster_control()
@@ -178,11 +179,11 @@ set_state()
     # update CPUs
     for p in /proc/${master_pid}/task/*
     do
-    	taskset -cp ${ncores_vals[$ncores_key]} ${p##*/}
+    	taskset -cp ${ncores_vals[$ncores_key]} ${p##*/} > log.txt
     done
     # update frequency
     if [ $((counter % ${freq_period})) -eq 0 ]; then
-	echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed
+	echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed > log2.txt
     fi
     # updating cluster is done implicitly
 }
@@ -199,15 +200,18 @@ do
     counter=$((counter + 1))
     echo "Current count is ${counter}"
     # echo "Checking mod: $((${counter} % ${freq_period}))"
-    if [ "$DEBUG" -eq "1" ]; then
+    if [ "$DEBUG" -ge "1" ]; then
 	echo "Current FPS is ${fps_curr}"
 	echo "Target FPS is ${fps_target}"
 	echo "Current error is ${error}"
 	# echo "Current integral error is ${error_int}"
 	# echo "Current derivative error is ${error_der}"
 	echo "Previous error is ${error_prev}"
+	echo "Frequency: ${freq_vals[${freq_key}]}"
+	echo "CPUs: ${ncores_vals[${ncores_key}]}"
+	echo "Cluster: ${cluster}"
 	# echo "Previous integral error is ${int_prev}"
-	# echo ""
+	echo ""
     fi
     [ $((counter % ${ncores_period})) -eq 0 ] && ncores_control
     [ $((counter % ${freq_period})) -eq 0 ] && freq_control
