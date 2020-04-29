@@ -187,23 +187,17 @@ set_state()
 }
 
 trap "exit" INT
-# initialise state
+# initialise state with current parameters
 get_pid
-## set cluster and number of cores
-for p in /proc/${master_pid}/task/*
-do
-    taskset -cp 0-1 ${p##*/}
-done
-## set frequency
-sudo bash -c 'echo 100000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed'
+set_state
 
 while :
 do
     sleep ${dt}
     update_error
     counter=$((counter + 1))
-    echo "Current count is ${counter}"
-    echo "Checking mod: $((${counter} % ${freq_period}))"
+    # echo "Current count is ${counter}"
+    # echo "Checking mod: $((${counter} % ${freq_period}))"
     if [ "$DEBUG" -eq "1" ]; then
 	echo "Current FPS is ${fps_curr}"
 	echo "Target FPS is ${fps_target}"
