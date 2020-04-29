@@ -75,10 +75,10 @@ update_error()
 {
     update_fps ${fps_file}
     update_target ${target_file}
+    error_prev=${error}
     error=$(echo "${fps_target} - ${fps_curr}" | bc)
     error_int=$(echo "(${int_prev} + ${error}) * $dt" | bc)
     error_der=$(echo "scale = 4;(${error} - ${error_prev}) / ${dt}" | bc)
-    error_prev=${error}
     int_prev=${error_int}
 }
 
@@ -107,9 +107,9 @@ ncores_clip()
     then
 	ncores_max=${ncores_max_a73}
     fi
-    # [ $DEBUG -ge 2 ] && echo "ncores key value to be clipped: $ncores_key"
+    [ $DEBUG -ge 2 ] && echo "ncores key value to be clipped: $ncores_key"
     # ncores_key=$(echo "scale = 0;(${ncores_key} / 1)" | bc) # round to int
-    [ $DEBUG -ge 2 ] && echo "ncores key after rounding: $ncores_key"
+    # [ $DEBUG -ge 2 ] && echo "ncores key after rounding: $ncores_key"
     if [ 1 -eq "$(echo "${ncores_key} >= ${ncores_max}" | bc)" ] # clip to max/min
     then
     	ncores_key=${ncores_max}
@@ -196,6 +196,7 @@ set_state
 while :
 do
     sleep ${dt}
+    echo ""
     update_error
     counter=$((counter + 1))
     echo "Current count is ${counter}"
@@ -211,7 +212,6 @@ do
 	echo "CPUs: ${ncores_vals[${ncores_key}]}"
 	echo "Cluster: ${cluster}"
 	# echo "Previous integral error is ${int_prev}"
-	echo ""
     fi
     [ $((counter % ${ncores_period})) -eq 0 ] && ncores_control
     [ $((counter % ${freq_period})) -eq 0 ] && freq_control
