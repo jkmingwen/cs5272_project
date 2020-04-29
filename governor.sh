@@ -10,9 +10,10 @@ int_prev=0
 error=0
 error_int=0
 error_der=0
-dt=5 # delay between each sample
-freq_period=4
-cluster_period=20
+dt=2 # delay between each sample
+ncores_period=4
+freq_period=1
+cluster_period=7
 output=0
 counter=0
 
@@ -37,8 +38,8 @@ ncores_min=0
 
 # Coefficients for PID (proportional, accumulated, dampening)
 Kp_freq=1
-Kp_ncores=1
-Kp_cluster=1
+Kp_ncores=0.5
+Kp_cluster=0.4
 Ki_freq=0
 Ki_ncores=0
 Ki_cluster=0
@@ -121,9 +122,9 @@ ncores_clip()
 
 cluster_clip()
 {
-    [ $DEBUG -eq 1 ] && echo "cluster value to be clipped: $cluster"
+    [ $DEBUG -ge 1 ] && echo "cluster value to be clipped: $cluster"
     cluster=$(echo "scale = 0;(${cluster} / 1)" | bc) # round to int
-    [ $DEBUG -eq 1 ] && echo "cluster after rounding: $cluster"
+    [ $DEBUG -ge 1 ] && echo "cluster after rounding: $cluster"
     if [ 1 -eq "$(echo "${cluster} > 1" | bc)" ]
     then
     	cluster=2
@@ -131,7 +132,7 @@ cluster_clip()
     then
     	cluster=1
     fi
-    [ $DEBUG -eq 1 ] && echo "cluster value after clipping: $cluster"
+    [ $DEBUG -ge 1 ] && echo "cluster value after clipping: $cluster"
 }
 
 freq_control()
@@ -196,7 +197,7 @@ do
     sleep ${dt}
     update_error
     counter=$((counter + 1))
-    # echo "Current count is ${counter}"
+    echo "Current count is ${counter}"
     # echo "Checking mod: $((${counter} % ${freq_period}))"
     if [ "$DEBUG" -eq "1" ]; then
 	echo "Current FPS is ${fps_curr}"
@@ -208,7 +209,7 @@ do
 	# echo "Previous integral error is ${int_prev}"
 	# echo ""
     fi
-    ncores_control
+    [ $((counter % ${ncores_period})) -eq 0 ] && ncores_control
     [ $((counter % ${freq_period})) -eq 0 ] && freq_control
     [ $((counter % ${cluster_period})) -eq 0 ] && cluster_control
     set_state
