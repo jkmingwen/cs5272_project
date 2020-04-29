@@ -119,6 +119,21 @@ ncores_clip()
     [ $DEBUG -eq 1 ] && echo "ncores key value after clipping: $ncores_key"
 }
 
+cluster_clip()
+{
+    [ $DEBUG -eq 1 ] && echo "cluster value to be clipped: $cluster"
+    cluster=$(echo "scale = 0;(${cluster} / 1)" | bc) # round to int
+    [ $DEBUG -eq 1 ] && echo "cluster after rounding: $cluster"
+    if [ 1 -eq "$(echo "${cluster} > 1" | bc)" ]
+    then
+    	cluster=2
+    elif [ 1 -eq "$(echo "${cluster} <= 1" | bc)" ]
+    then
+    	cluster=1
+    fi
+    [ $DEBUG -eq 1 ] && echo "cluster value after clipping: $cluster"
+}
+
 freq_control()
 {
     # [ $DEBUG -eq 1 ] && echo "Current frequency: ${freqs_a53[${freq_key}]}"
@@ -139,8 +154,9 @@ ncores_control()
 
 cluster_control()
 {
-    update_error
-    # if output -ve, migrate to bigger core vice versa
+    cluster_out=$(echo "${Kp_cluster} * ${error} + ${Ki_cluster} * ${error_int} + ${Kd_cluster} * ${error_der}" | bc)
+    cluster=$(echo "${cluster} + ${cluster_out}" | bc)
+    cluster_clip
 }
 
 set_state()
@@ -158,13 +174,16 @@ set_state()
     fi
 
     echo "Setting state..."
-    # update frequency
-    echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed
     # update CPUs
     for p in /proc/${master_pid}/task/*
     do
     	taskset -cp ${ncores_vals[$ncores_key]} ${p##*/}
     done
+    # update frequency
+    if [ $((counter % ${freq_period})) -eq 0 ]; then
+	echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed
+    fi
+    # updating cluster is done implicitly
 }
 
 trap "exit" INT
@@ -197,6 +216,7 @@ do
     fi
     ncores_control
     [ $((counter % ${freq_period})) -eq 0 ] && freq_control
+    [ $((counter % ${cluster_period})) -eq 0 ] && cluster_control
     set_state
 done
 
