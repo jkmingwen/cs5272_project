@@ -11,12 +11,16 @@ error=0
 error_int=0
 error_der=0
 dt=5 # delay between each sample
+freq_period=4
+cluster_period=20
 output=0
 counter=0
 
 # state variables
-ncores_a53=2
-ncores_a73=4
+ncores_key=1
+ncores_a53=(0 0-1)
+ncores_a73=(2 2-3 2-4 2-5)
+ncores_vals=0
 freq_key=1
 cluster=1
 freqs_a53=(100000 250000 500000 667000 1000000 1200000 1398000 1512000 1608000 1704000 1896000)
@@ -26,9 +30,10 @@ policy=policy0
 # state limits
 freq_max=10
 freq_min=0
-ncores_max_a53=2
-ncores_max_a73=4
-ncores_min=1
+ncores_max_a53=1
+ncores_max_a73=3
+ncores_max=0
+ncores_min=0
 
 # Coefficients for PID (proportional, accumulated, dampening)
 Kp_freq=1
@@ -78,9 +83,9 @@ update_error()
 
 freq_clip()
 {
-    [ $DEBUG -eq 1 ] && echo "freq value to be clipped: $freq_key"
+    # [ $DEBUG -eq 1 ] && echo "freq value to be clipped: $freq_key"
     freq_key=$(echo "scale = 0;(${freq_key} / 1)" | bc) # round to int
-    [ $DEBUG -eq 1 ] && echo "freq after rounding: $freq_key"
+    # [ $DEBUG -eq 1 ] && echo "freq after rounding: $freq_key"
     if [ 1 -eq "$(echo "${freq_key} >= ${freq_max}" | bc)" ] # clip to max/min
     then
 	freq_key=${freq_max}
@@ -88,41 +93,48 @@ freq_clip()
     then
 	freq_key=${freq_min}
     fi
-    [ $DEBUG -eq 1 ] && echo "freq value after clipping: $freq_key"
+    # [ $DEBUG -eq 1 ] && echo "freq value after clipping: $freq_key"
 }
 
 ncores_clip()
 {
-    # # [ $DEBUG -eq 1 ] && echo "freq value to be clipped: $ncores_a53"
-    # freq_key=$(echo "scale = 0;(${freq_key} / 1)" | bc) # round to int
-    # # [ $DEBUG -eq 1 ] && echo "freq after rounding: $freq_key"
-    # if [ 1 -eq "$(echo "${freq_key} >= ${freq_max}" | bc)" ] # clip to max/min
-    # then
-    # 	freq_key=${freq_max}
-    # elif [ 1 -eq "$(echo "${freq_key} <= ${freq_min}" | bc)" ]
-    # then
-    # 	freq_key=${freq_min}
-    # fi
-    # # [ $DEBUG -eq 1 ] && echo "freq value after clipping: $freq_key"
-    return
+    # check cluster status to set max bounds
+    if [ ${cluster} -eq 1 ]
+    then
+	ncores_max=${ncores_max_a53}
+    elif [ ${cluster} -eq 2 ]
+    then
+	ncores_max=${ncores_max_a73}
+    fi
+    [ $DEBUG -eq 1 ] && echo "ncores key value to be clipped: $ncores_key"
+    ncores_key=$(echo "scale = 0;(${ncores_key} / 1)" | bc) # round to int
+    [ $DEBUG -eq 1 ] && echo "ncores key after rounding: $ncores_key"
+    if [ 1 -eq "$(echo "${ncores_key} >= ${ncores_max}" | bc)" ] # clip to max/min
+    then
+    	ncores_key=${ncores_max}
+    elif [ 1 -eq "$(echo "${ncores_key} <= ${ncores_min}" | bc)" ]
+    then
+    	ncores_key=${ncores_min}
+    fi
+    [ $DEBUG -eq 1 ] && echo "ncores key value after clipping: $ncores_key"
 }
 
 freq_control()
 {
-    # if counter % freq_period, then output = 0 else:
-    [ $DEBUG -eq 1 ] && echo "Current frequency: ${freqs_a53[${freq_key}]}"
+    # [ $DEBUG -eq 1 ] && echo "Current frequency: ${freqs_a53[${freq_key}]}"
     freq_out=$(echo "${Kp_freq} * ${error} + ${Ki_freq} * ${error_int} + ${Kd_freq} * ${error_der}" | bc)
     freq_key=$(echo "${freq_key} + ${freq_out}" | bc)
     freq_clip
-    [ $DEBUG -eq 1 ] && echo "New frequency: ${freqs_a53[${freq_key}]}"
+    # [ $DEBUG -eq 1 ] && echo "New frequency: ${freqs_a53[${freq_key}]}"
 }
 
 ncores_control()
 {
-    # ncores_out=$(echo "${Kp_ncores} * ${error} + ${Ki_ncores} * ${error_int} + ${Kd_ncores} * ${error_der}" | bc)
-    # ncores_a53=$(echo "${ncores_a53} + ${ncores_out}" | bc)
-    # ncores_clip
-    return
+    # [ $DEBUG -eq 1 ] && echo "Current CPUs: ${ncores_vals[${ncores_key}]}"
+    ncores_out=$(echo "${Kp_ncores} * ${error} + ${Ki_ncores} * ${error_int} + ${Kd_ncores} * ${error_der}" | bc)
+    ncores_key=$(echo "${ncores_key} + ${ncores_out}" | bc)
+    ncores_clip
+    # [ $DEBUG -eq 1 ] && echo "New CPUs: ${ncores_vals[${ncores_key}]}"
 }
 
 cluster_control()
@@ -133,23 +145,26 @@ cluster_control()
 
 set_state()
 {
-    # update frequency
     if [ ${cluster} -eq 1 ]
     then
-	echo "Cluster is equal to ${cluster}"
 	policy=policy0
 	freq_vals=(${freqs_a53[*]})
+	ncores_vals=(${ncores_a53[*]})
     elif [ ${cluster} -eq 2 ]
     then
-	echo "Cluster is equal to ${cluster}"
 	policy=policy2
 	freq_vals=(${freqs_a73[*]})
+	ncores_vals=(${ncores_a73[*]})
     fi
 
     echo "Setting state..."
-    # echo "Frequency to set is ${freq_vals[${freq_key}]}, policy is ${policy}"
+    # update frequency
     echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed
-    # sudo bash -c 'echo' ${freq_vals[${freq_key}]} > /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed
+    # update CPUs
+    for p in /proc/${master_pid}/task/*
+    do
+    	taskset -cp ${ncores_vals[$ncores_key]} ${p##*/}
+    done
 }
 
 trap "exit" INT
@@ -168,8 +183,8 @@ do
     sleep ${dt}
     update_error
     counter=$((counter + 1))
-    # echo "Current count is ${counter}"
-    # echo "Checking mod: $((counter % 5))"
+    echo "Current count is ${counter}"
+    echo "Checking mod: $((${counter} % ${freq_period}))"
     if [ "$DEBUG" -eq "1" ]; then
 	echo "Current FPS is ${fps_curr}"
 	echo "Target FPS is ${fps_target}"
@@ -180,7 +195,8 @@ do
 	# echo "Previous integral error is ${int_prev}"
 	# echo ""
     fi
-    freq_control
+    ncores_control
+    [ $((counter % ${freq_period})) -eq 0 ] && freq_control
     set_state
 done
 
