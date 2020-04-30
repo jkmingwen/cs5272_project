@@ -13,7 +13,7 @@ error_der=0
 dt=2 # delay between each sample
 ncores_period=1
 freq_period=4
-cluster_period=7
+cluster_period=8
 output=0
 counter=0
 
@@ -191,45 +191,39 @@ cluster_control()
     [ $DEBUG -ge 3 ] && echo "Cluster change check: ${cluster_diff}"
 }
 
+# whenever a cluster is changed, need to update frequency values and ncores to match
+update_cluster()
+{
+    if [ ${cluster} -eq 1 ]
+    then
+	policy=policy0
+	freq_vals=(${freqs_a53[*]})
+	ncores_vals=(${ncores_a53[*]})
+	ncores_clip # coming from cluster 2, ncores_key could be out of bounds
+	echo ${freqs_a73[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_setspeed > tmp/log2.txt
+    elif [ ${cluster} -eq 2 ]
+    then
+	policy=policy2
+	freq_vals=(${freqs_a73[*]})
+	ncores_vals=(${ncores_a73[*]})
+	echo ${freqs_a53[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed > tmp/log2.txt
+    fi
+}
+
 set_state()
 {
     if [ ${governor_init} -eq 0 ]
     then
 	# initialise all clusters with lowest frequency
+	[ $DEBUG -ge 3 ] && echo "Setting A53 and A73 frequencies to ${freqs_a53[0]} and ${freqs_a73[0]}"
 	echo ${freqs_a73[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_setspeed > tmp/log2.txt
 	echo ${freqs_a53[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed > tmp/log2.txt
-	if [ ${cluster} -eq 1 ]
-	then
-	    policy=policy0
-	    freq_vals=(${freqs_a53[*]})
-	    ncores_vals=(${ncores_a53[*]})
-	    ncores_clip # coming from cluster 2, ncores_key could be out of bounds
-	    echo ${freqs_a73[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_setspeed > tmp/log2.txt
-	elif [ ${cluster} -eq 2 ]
-	then
-	    policy=policy2
-	    freq_vals=(${freqs_a73[*]})
-	    ncores_vals=(${ncores_a73[*]})
-	    echo ${freqs_a53[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed > tmp/log2.txt
-	fi
+	update_cluster
     fi
     # updating cluster (determines CPU and freq values)
     if [ ${cluster_diff} -eq 1 ]
     then
-	if [ ${cluster} -eq 1 ]
-	then
-	    policy=policy0
-	    freq_vals=(${freqs_a53[*]})
-	    ncores_vals=(${ncores_a53[*]})
-	    ncores_clip # coming from cluster 2, ncores_key could be out of bounds
-	    echo ${freqs_a73[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_setspeed > tmp/log2.txt
-	elif [ ${cluster} -eq 2 ]
-	then
-	    policy=policy2
-	    freq_vals=(${freqs_a73[*]})
-	    ncores_vals=(${ncores_a73[*]})
-	    echo ${freqs_a53[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed > tmp/log2.txt
-	fi
+	update_cluster
     fi
     echo "Setting state..."
     # update CPUs (and cluster) if there are any changes
