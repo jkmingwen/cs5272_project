@@ -35,6 +35,9 @@ ncores_max_a53=1
 ncores_max_a73=3
 ncores_max=0
 ncores_min=0
+# track any changes
+ncores_diff=0
+cluster_diff=0
 
 # Coefficients for PID (proportional, accumulated, dampening)
 Kp_freq=0.9
@@ -159,14 +162,22 @@ ncores_control()
     else
 	ncores_diff=1
     fi
-    [ $DEBUG -ge 2 ] && echo "CPU change check: ${ncores_diff}"
+    [ $DEBUG -ge 3 ] && echo "CPU change check: ${ncores_diff}"
 }
 
 cluster_control()
 {
+    cluster_old=${cluster}
     cluster_out=$(echo "${Kp_cluster} * ${error} + ${Ki_cluster} * ${error_int} + ${Kd_cluster} * ${error_der}" | bc)
     cluster=$(echo "${cluster} + ${cluster_out}" | bc)
     cluster_clip
+    if [ $cluster_old -eq $cluster ]
+    then
+	cluster_diff=0
+    else
+	cluster_diff=1
+    fi
+    [ $DEBUG -ge 3 ] && echo "Cluster change check: ${cluster_diff}"
 }
 
 set_state()
@@ -186,11 +197,15 @@ set_state()
     fi
 
     echo "Setting state..."
-    # update CPUs
-    for p in /proc/${master_pid}/task/*
-    do
-    	taskset -cp ${ncores_vals[$ncores_key]} ${p##*/} > tmp/log.txt
-    done
+    # update CPUs (and cluster) if there are any changes
+    if [ ${ncores_diff} -eq 1 ] || [ ${cluster_diff} -eq 1 ]
+    then
+	[ $DEBUG -ge 3 ] echo "Changes detected in new CPU/Cluster state: updating..."
+	for p in /proc/${master_pid}/task/*
+	do
+    	    taskset -cp ${ncores_vals[$ncores_key]} ${p##*/} > tmp/log.txt
+	done
+    fi
     # update frequency
     if [ $((counter % ${freq_period})) -eq 0 ]; then
 	echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed > tmp/log2.txt
@@ -215,7 +230,7 @@ do
     echo ""
     update_error
     counter=$((counter + 1))
-    echo "Current count is ${counter}"
+    echo "Current iteration count: ${counter}"
     # echo "Checking mod: $((${counter} % ${freq_period}))"
     if [ "$DEBUG" -ge "1" ]; then
 	echo "Current FPS is ${fps_curr}"
@@ -233,4 +248,7 @@ do
     [ $((counter % ${freq_period})) -eq 0 ] && freq_control
     [ $((counter % ${cluster_period})) -eq 0 ] && cluster_control
     set_state
+    # reset change flags
+    ncores_diff=0
+    cluster_diff=0
 done
