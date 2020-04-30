@@ -18,11 +18,11 @@ output=0
 counter=0
 
 # state variables
-ncores_key=1
+ncores_key=0
 ncores_a53=(0 0-1)
 ncores_a73=(2 2-3 2-4 2-5)
 ncores_vals=0
-freq_key=1
+freq_key=0
 cluster=1
 freqs_a53=(100000 250000 500000 667000 1000000 1200000 1398000 1512000 1608000 1704000 1896000)
 freqs_a73=(100000 250000 500000 667000 1000000 1200000 1398000 1512000 1608000 1704000 1800000)
@@ -42,7 +42,7 @@ cluster_diff=0
 governor_init=0
 
 # Coefficients for PID (proportional, accumulated, dampening)
-Kp_freq=1.2
+Kp_freq=1.5
 Kp_ncores=0.9
 Kp_cluster=0.4
 Ki_freq=0
@@ -51,6 +51,7 @@ Ki_cluster=0
 Kd_freq=0
 Kd_ncores=0
 Kd_cluster=0
+freq_bias=0.4
 
 get_pid()
 {
@@ -130,10 +131,10 @@ cluster_clip()
     [ $DEBUG -ge 2 ] && echo "cluster value to be clipped: $cluster"
     cluster=$(echo "scale = 0;(${cluster} / 1)" | bc) # round to int
     [ $DEBUG -ge 2 ] && echo "cluster after rounding: $cluster"
-    if [ 1 -eq "$(echo "${cluster} > 1" | bc)" ]
+    if [ 1 -eq "$(echo "${cluster} >= 1" | bc)" ]
     then
     	cluster=2
-    elif [ 1 -eq "$(echo "${cluster} <= 1" | bc)" ]
+    elif [ 1 -eq "$(echo "${cluster} < 1" | bc)" ]
     then
     	cluster=1
     fi
@@ -144,7 +145,7 @@ freq_control()
 {
     [ $DEBUG -ge 2 ] && echo "Current frequency: ${freq_vals[${freq_key}]}"
     freq_old=${freq_vals[${freq_key}]}
-    freq_out=$(echo "${Kp_freq} * ${error} + ${Ki_freq} * ${error_int} + ${Kd_freq} * ${error_der}" | bc)
+    freq_out=$(echo "${Kp_freq} * ${error} + ${Ki_freq} * ${error_int} + ${Kd_freq} * ${error_der} + ${freq_bias}" | bc)
     freq_key=$(echo "${freq_key} + ${freq_out}" | bc)
     freq_clip
     [ $DEBUG -ge 2 ] && echo "New frequency: ${freq_vals[${freq_key}]}"
@@ -193,19 +194,23 @@ cluster_control()
 set_state()
 {
     # updating cluster (determines CPU and freq values)
-    if [ ${cluster} -eq 1 ]
+    if [ ${cluster_diff} -eq 1 ] || [ ${governor_init} -eq 0 ]
     then
-	policy=policy0
-	freq_vals=(${freqs_a53[*]})
-	ncores_vals=(${ncores_a53[*]})
-	ncores_clip # coming from cluster 2, ncores_key could be out of bounds
-    elif [ ${cluster} -eq 2 ]
-    then
-	policy=policy2
-	freq_vals=(${freqs_a73[*]})
-	ncores_vals=(${ncores_a73[*]})
+	if [ ${cluster} -eq 1 ]
+	then
+	    policy=policy0
+	    freq_vals=(${freqs_a53[*]})
+	    ncores_vals=(${ncores_a53[*]})
+	    ncores_clip # coming from cluster 2, ncores_key could be out of bounds
+	    echo ${freqs_a73[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_setspeed > tmp/log2.txt
+	elif [ ${cluster} -eq 2 ]
+	then
+	    policy=policy2
+	    freq_vals=(${freqs_a73[*]})
+	    ncores_vals=(${ncores_a73[*]})
+	    echo ${freqs_a53[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed > tmp/log2.txt
+	fi
     fi
-
     echo "Setting state..."
     # update CPUs (and cluster) if there are any changes
     if [ ${ncores_diff} -eq 1 ] || [ ${cluster_diff} -eq 1 ] || [ ${governor_init} -eq 0 ]
@@ -217,9 +222,9 @@ set_state()
 	done
     fi
     # update frequency
-    if [ ${freq_diff} -eq 1 ]
+    if [ ${freq_diff} -eq 1 ] || [ ${cluster_diff} -eq 1 ] # freq must be set on cluster changes too
     then
-    echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed > tmp/log2.txt
+	echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed > tmp/log2.txt
     fi
 }
 
