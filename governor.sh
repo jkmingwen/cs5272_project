@@ -11,8 +11,8 @@ error=0
 error_int=0
 error_der=0
 dt=2 # delay between each sample
-ncores_period=4
-freq_period=1
+ncores_period=1
+freq_period=4
 cluster_period=7
 output=0
 counter=0
@@ -193,8 +193,28 @@ cluster_control()
 
 set_state()
 {
+    if [ ${governor_init} -eq 0 ]
+    then
+	# initialise all clusters with lowest frequency
+	echo ${freqs_a73[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_setspeed > tmp/log2.txt
+	echo ${freqs_a53[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed > tmp/log2.txt
+	if [ ${cluster} -eq 1 ]
+	then
+	    policy=policy0
+	    freq_vals=(${freqs_a53[*]})
+	    ncores_vals=(${ncores_a53[*]})
+	    ncores_clip # coming from cluster 2, ncores_key could be out of bounds
+	    echo ${freqs_a73[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_setspeed > tmp/log2.txt
+	elif [ ${cluster} -eq 2 ]
+	then
+	    policy=policy2
+	    freq_vals=(${freqs_a73[*]})
+	    ncores_vals=(${ncores_a73[*]})
+	    echo ${freqs_a53[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed > tmp/log2.txt
+	fi
+    fi
     # updating cluster (determines CPU and freq values)
-    if [ ${cluster_diff} -eq 1 ] || [ ${governor_init} -eq 0 ]
+    if [ ${cluster_diff} -eq 1 ]
     then
 	if [ ${cluster} -eq 1 ]
 	then
