@@ -171,11 +171,13 @@ cluster_control()
 
 set_state()
 {
+    # updating cluster (determines CPU and freq values)
     if [ ${cluster} -eq 1 ]
     then
 	policy=policy0
 	freq_vals=(${freqs_a53[*]})
 	ncores_vals=(${ncores_a53[*]})
+	ncores_clip # coming from cluster 2, ncores_key could be out of bounds
     elif [ ${cluster} -eq 2 ]
     then
 	policy=policy2
@@ -193,7 +195,6 @@ set_state()
     if [ $((counter % ${freq_period})) -eq 0 ]; then
 	echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed > tmp/log2.txt
     fi
-    # updating cluster is done implicitly
 }
 
 cleanup()
