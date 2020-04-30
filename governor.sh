@@ -147,11 +147,19 @@ freq_control()
 ncores_control()
 {
     [ $DEBUG -ge 2 ] && echo "Current CPUs: ${ncores_vals[${ncores_key}]}"
+    ncores_old=${ncores_vals[${ncores_key}]}
     ncores_out=$(echo "${Kp_ncores} * ${error} + ${Ki_ncores} * ${error_int} + ${Kd_ncores} * ${error_der}" | bc)
     ncores_out=$(echo "scale = 0;(${ncores_out} / 1)" | bc) # round to int
     ncores_key=$(echo "${ncores_key} + ${ncores_out}" | bc)
     ncores_clip
     [ $DEBUG -ge 2 ] && echo "New CPUs: ${ncores_vals[${ncores_key}]}"
+    if [ "${ncores_old}" = "${ncores_vals[${ncores_key}]}" ]
+    then
+	ncores_diff=0
+    else
+	ncores_diff=1
+    fi
+    [ $DEBUG -ge 2 ] && echo "CPU change check: ${ncores_diff}"
 }
 
 cluster_control()
@@ -179,20 +187,27 @@ set_state()
     # update CPUs
     for p in /proc/${master_pid}/task/*
     do
-    	taskset -cp ${ncores_vals[$ncores_key]} ${p##*/} > log.txt
+    	taskset -cp ${ncores_vals[$ncores_key]} ${p##*/} > tmp/log.txt
     done
     # update frequency
     if [ $((counter % ${freq_period})) -eq 0 ]; then
-	echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed > log2.txt
+	echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed > tmp/log2.txt
     fi
     # updating cluster is done implicitly
 }
 
-trap "exit" INT
+cleanup()
+{
+    rm -rf tmp
+}
+
+mkdir -p tmp
+trap cleanup EXIT
+
 # initialise state with current parameters
 get_pid
 set_state
-
+# start governor
 while :
 do
     sleep ${dt}
@@ -218,4 +233,3 @@ do
     [ $((counter % ${cluster_period})) -eq 0 ] && cluster_control
     set_state
 done
-
