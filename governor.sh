@@ -36,12 +36,14 @@ ncores_max_a73=3
 ncores_max=0
 ncores_min=0
 # track any changes
+freq_diff=0
 ncores_diff=0
 cluster_diff=0
+governor_init=0
 
 # Coefficients for PID (proportional, accumulated, dampening)
-Kp_freq=0.9
-Kp_ncores=0.5
+Kp_freq=1.2
+Kp_ncores=0.9
 Kp_cluster=0.4
 Ki_freq=0
 Ki_ncores=0
@@ -141,10 +143,18 @@ cluster_clip()
 freq_control()
 {
     [ $DEBUG -ge 2 ] && echo "Current frequency: ${freq_vals[${freq_key}]}"
+    freq_old=${freq_vals[${freq_key}]}
     freq_out=$(echo "${Kp_freq} * ${error} + ${Ki_freq} * ${error_int} + ${Kd_freq} * ${error_der}" | bc)
     freq_key=$(echo "${freq_key} + ${freq_out}" | bc)
     freq_clip
     [ $DEBUG -ge 2 ] && echo "New frequency: ${freq_vals[${freq_key}]}"
+    if [ ${freq_old} -eq ${freq_vals[${freq_key}]} ]
+    then
+	freq_diff=0
+    else
+	freq_diff=1
+    fi
+    [ $DEBUG -ge 3 ] && echo "Frequency change check: ${freq_diff}"
 }
 
 ncores_control()
@@ -198,17 +208,18 @@ set_state()
 
     echo "Setting state..."
     # update CPUs (and cluster) if there are any changes
-    if [ ${ncores_diff} -eq 1 ] || [ ${cluster_diff} -eq 1 ]
+    if [ ${ncores_diff} -eq 1 ] || [ ${cluster_diff} -eq 1 ] || [ ${governor_init} -eq 0 ]
     then
-	[ $DEBUG -ge 3 ] echo "Changes detected in new CPU/Cluster state: updating..."
+	[ $DEBUG -ge 3 ] && echo "Changes detected in new CPU/Cluster state: updating..."
 	for p in /proc/${master_pid}/task/*
 	do
     	    taskset -cp ${ncores_vals[$ncores_key]} ${p##*/} > tmp/log.txt
 	done
     fi
     # update frequency
-    if [ $((counter % ${freq_period})) -eq 0 ]; then
-	echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed > tmp/log2.txt
+    if [ ${freq_diff} -eq 1 ]
+    then
+    echo ${freq_vals[${freq_key}]} | sudo tee /sys/devices/system/cpu/cpufreq/${policy}/scaling_setspeed > tmp/log2.txt
     fi
 }
 
@@ -223,6 +234,7 @@ trap cleanup EXIT
 # initialise state with current parameters
 get_pid
 set_state
+governor_init=1
 # start governor
 while :
 do
@@ -249,6 +261,7 @@ do
     [ $((counter % ${cluster_period})) -eq 0 ] && cluster_control
     set_state
     # reset change flags
+    freq_diff=0
     ncores_diff=0
     cluster_diff=0
 done
