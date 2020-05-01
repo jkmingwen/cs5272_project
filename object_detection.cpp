@@ -111,18 +111,10 @@ int main(int argc, char** argv)
     // Set which CPUs to run on (A53: 0-1, A73: 2-5)
     // Initialise CPU masks
     pid_t master_pid = getpid();
-    std::vector<pid_t> children;
-    std::cout << "Parent PID: " << master_pid << std::endl;
-    std::string pidCommand = "ls -1 \'/proc/" + std::to_string(master_pid) + "/task\'";
-    std::string pid_list = "pid_list.txt";
-    // system((pidCommand + " > " + pid_list).c_str());
-    cpu_set_t a53_set;
-    cpu_set_t a73_set;
-    CPU_ZERO(&a53_set);
-    CPU_ZERO(&a73_set);
     cpu_set_t set;
     CPU_ZERO(&set);
     std::string pathToFreq = "/sys/devices/system/cpu/cpufreq/";
+    std::string pathToOtherFreq = "/sys/devices/system/cpu/cpufreq/";
     if (test == 1) {
       switch (cluster) {
       case 1:
@@ -131,6 +123,7 @@ int main(int argc, char** argv)
 	  CPU_SET(i, &set);
 	}
 	pathToFreq += "policy0";
+	pathToOtherFreq += "policy2";
 	break;
       case 2:
 	if (ncores == 0 || ncores > A73_MAX) ncores = A73_MAX;
@@ -138,6 +131,7 @@ int main(int argc, char** argv)
 	  CPU_SET(i, &set);
 	}
 	pathToFreq += "policy2";
+	pathToOtherFreq += "policy0";
 	break;
       default:
 	break;
@@ -146,11 +140,11 @@ int main(int argc, char** argv)
       
       // Set CPU frequency
       std::string freqCommand = "sudo bash -c \'echo " + std::to_string(freq) + " > " + pathToFreq + "/scaling_setspeed\'";
+       std::string otherFreqCommand = "sudo bash -c \'echo " + std::to_string(freq) + " > " + pathToOtherFreq + "/scaling_setspeed\'";
       std::cout << freqCommand << std::endl;
       system(freqCommand.c_str());
+      system(otherFreqCommand.c_str());
     } else if (test == 2) {
-      for (int i = A53_START; i < A53_START + A53_MAX; i++) CPU_SET(i, &a53_set);
-      for (int i = A73_START; i < A73_START + A73_MAX; i++) CPU_SET(i, &a73_set);
       switch (cluster) {
       case 1:
 	system(("bash task_migrate.sh " + std::to_string(master_pid) + " 0-1").c_str());
@@ -208,9 +202,11 @@ int main(int argc, char** argv)
       fileName = fileName + ".txt";
     }
     framesCount.open(fileName.c_str(), std::ofstream::app);
+    fpsCurrent.open("fps.txt", std::ofstream::trunc); // store only current FPS
     double fCount = 0;
     auto start = std::chrono::steady_clock::now();
     auto samp_start = std::chrono::steady_clock::now();
+    
     // Process frames.
     Mat frame, blob;    
     while (waitKey(1) < 0)
@@ -255,13 +251,10 @@ int main(int argc, char** argv)
 	  auto samp_end = std::chrono::steady_clock::now();
 	  std::chrono::duration<double> samp_duration = samp_end - samp_start;
 	  std::chrono::duration<double> cumulative_duration = samp_end - start;
-	  fpsCurrent.open("fps.txt", std::ofstream::trunc); // store only current FPS
-	  fpsCurrent << grain/samp_duration.count() << "\n";
-	  fpsCurrent.close();
+	  fpsCurrent << grain/samp_duration.count() << std::endl;
 	  samp_start = std::chrono::steady_clock::now();
 	}
 	// if (fCount == 30) system("./governor.sh");
-	
 	if (test == 2) {
 	  // log FPS every grain frames
 	  if (fmod(fCount, grain) == 0) {
@@ -301,9 +294,9 @@ int main(int argc, char** argv)
     if (test == 1) {
       auto end = std::chrono::steady_clock::now();
       std::chrono::duration<double> elapsed_seconds = end - start;
-      // framesCount << "Frames processed, time elapsed (s): " << fCount << ", " << elapsed_seconds.count() << "\n";
-      // framesCount << "Average FPS:" << fCount/elapsed_seconds.count() << "\n";
-      framesCount << CPU_COUNT(&set) << "," << fCount/elapsed_seconds.count() << "," << freq << "\n";
+      framesCount << "Frames processed, time elapsed (s): " << fCount << ", " << elapsed_seconds.count() << "\n";
+      framesCount << "Average FPS:" << fCount/elapsed_seconds.count() << "\n";
+      // framesCount << CPU_COUNT(&set) << "," << fCount/elapsed_seconds.count() << "," << freq << "\n";
     }
     framesCount.close();
     fpsCurrent.close();
