@@ -140,7 +140,7 @@ int main(int argc, char** argv)
       
       // Set CPU frequency
       std::string freqCommand = "sudo bash -c \'echo " + std::to_string(freq) + " > " + pathToFreq + "/scaling_setspeed\'";
-       std::string otherFreqCommand = "sudo bash -c \'echo " + std::to_string(freq) + " > " + pathToOtherFreq + "/scaling_setspeed\'";
+       std::string otherFreqCommand = "sudo bash -c \'echo " + std::to_string(100000) + " > " + pathToOtherFreq + "/scaling_setspeed\'";
       std::cout << freqCommand << std::endl;
       system(freqCommand.c_str());
       system(otherFreqCommand.c_str());

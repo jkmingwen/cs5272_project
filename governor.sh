@@ -208,6 +208,9 @@ update_cluster()
 	ncores_vals=(${ncores_a73[*]})
 	echo ${freqs_a53[0]} | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed > tmp/log2.txt
     fi
+    # reset higher priority controllers to 0
+    ncores_key=${ncores_min}
+    freq_key=0
 }
 
 set_state()
