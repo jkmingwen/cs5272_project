@@ -1,5 +1,5 @@
 #!/bin/bash
-DEBUG=$1
+DEBUG=${1:-1}
 fps_file="fps.txt"
 target_file="target_fps.txt"
 
